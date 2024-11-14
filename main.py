@@ -38,16 +38,23 @@ class FacebookService:
             print(f"Error publishing post: {e}")
             return None
 
-def load_posted_urls() -> Set[str]:
-    try:
-        with open('posted_urls.txt', 'r') as f:
-            return set(line.strip() for line in f)
-    except FileNotFoundError:
-        return set()
-
-def save_posted_url(url: str):
-    with open('posted_urls.txt', 'a') as f:
-        f.write(f"{url}\n")
+    def get_recent_posts(self, limit: int = 100) -> Set[str]:
+        """Fetch recent post captions to check for duplicates"""
+        url = f"{self.BASE_URL}/feed"
+        params = {
+            'fields': 'message',
+            'limit': limit,
+            'access_token': self.FB_TOKEN
+        }
+        
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            posts = response.json().get('data', [])
+            return {post.get('message', '') for post in posts}
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching recent posts: {e}")
+            return set()
 
 def get_top_reddit_post() -> Optional[dict]:
     try:
@@ -58,15 +65,17 @@ def get_top_reddit_post() -> Optional[dict]:
         )
         
         subreddit = reddit.subreddit('ProgrammerHumor')
-        posted_urls = load_posted_urls()
+        
+        # Get existing post titles from Facebook
+        fb_service = FacebookService()
+        existing_posts = fb_service.get_recent_posts()
         
         # Get hot posts and find the first valid image post that hasn't been posted
         for submission in subreddit.hot(limit=25):
             url = submission.url
             
             if (any(url.lower().endswith(ext) for ext in ('.jpg', '.png')) 
-                and url not in posted_urls):
-                save_posted_url(url)
+                and submission.title not in existing_posts):
                 return {
                     'url': url,
                     'title': submission.title
