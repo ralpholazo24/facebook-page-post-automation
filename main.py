@@ -11,20 +11,20 @@ load_dotenv()
 class PostImageRequest(TypedDict):
     story: str
     url: str
-    scheduled_publish_time: str
     published: bool
 
 class FacebookService:
     def __init__(self):
         self.BASE_URL = 'https://graph.facebook.com/v21.0/me'
-        self.FB_TOKEN = os.environ['FB_ACCESS_TOKEN']
+        self.FB_TOKEN = os.getenv('FB_ACCESS_TOKEN')
+        if not self.FB_TOKEN:
+            raise ValueError("FB_ACCESS_TOKEN environment variable is not set")
 
     def publish_post(self, request: PostImageRequest):
         url = f"{self.BASE_URL}/photos"
         params = {
             'caption': request['story'],
             'url': request['url'],
-            'scheduled_publish_time': request['scheduled_publish_time'],
             'published': str(request['published']).lower(),
             'access_token': self.FB_TOKEN
         }
@@ -67,35 +67,26 @@ def get_top_reddit_post():
 def post_to_facebook(post):
     try:
         fb_service = FacebookService()
-        # Calculate scheduled time (6 hours from now)
-        scheduled_time = int((datetime.now() + timedelta(hours=6)).timestamp())
         
         request: PostImageRequest = {
             'story': post['title'],
             'url': post['url'],
-            #'scheduled_publish_time': str(scheduled_time),
-            'published': 'true'
+            'published': True
         }
         
         result = fb_service.publish_post(request)
         if result:
-            print(f"Successfully scheduled post: {post['title']} for {datetime.fromtimestamp(scheduled_time)}")
+            print(f"Successfully posted: {post['title']}")
         else:
-            print("Failed to schedule post")
+            print("Failed to post")
             
     except Exception as e:
         print(f"Error posting to Facebook: {e}")
 
 def main():
-    while True:
-        top_post = get_top_reddit_post()
-        
-        if top_post:
-            post_to_facebook(top_post)
-        
-        time_to_next_post = timedelta(hours=6)
-        print(f'Waiting {time_to_next_post} before next post...')
-        time.sleep(time_to_next_post.total_seconds())
+    top_post = get_top_reddit_post()
+    if top_post:
+        post_to_facebook(top_post)
 
 if __name__ == "__main__":
     main()
