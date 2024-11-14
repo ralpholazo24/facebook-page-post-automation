@@ -3,7 +3,8 @@ import os
 import time
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from typing import TypedDict
+from typing import TypedDict, Optional, Set
+import praw
 
 # Load environment variables from .env file
 load_dotenv()
@@ -37,27 +38,41 @@ class FacebookService:
             print(f"Error publishing post: {e}")
             return None
 
-def get_top_reddit_post():
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    url = 'https://www.reddit.com/r/ProgrammerHumor/hot.json'
-    
+def load_posted_urls() -> Set[str]:
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
+        with open('posted_urls.txt', 'r') as f:
+            return set(line.strip() for line in f)
+    except FileNotFoundError:
+        return set()
+
+def save_posted_url(url: str):
+    with open('posted_urls.txt', 'a') as f:
+        f.write(f"{url}\n")
+
+def get_top_reddit_post() -> Optional[dict]:
+    try:
+        reddit = praw.Reddit(
+            client_id=os.getenv('REDDIT_CLIENT_ID'),
+            client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
+            user_agent='ProgrammerHumorBot/1.0'
+        )
         
-        posts = response.json()['data']['children']
+        subreddit = reddit.subreddit('ProgrammerHumor')
+        posted_urls = load_posted_urls()
         
-        # Find the first image post that meets our criteria
-        for post in posts:
-            post_data = post['data']
-            url = post_data.get('url', '')
+        # Get hot posts and find the first valid image post that hasn't been posted
+        for submission in subreddit.hot(limit=25):
+            url = submission.url
             
-            if any(url.lower().endswith(ext) for ext in ('.jpg', '.png', '.gif')):
+            if (any(url.lower().endswith(ext) for ext in ('.jpg', '.png')) 
+                and url not in posted_urls):
+                save_posted_url(url)
                 return {
                     'url': url,
-                    'title': post_data['title']
+                    'title': submission.title
                 }
         
+        print("No new posts found - all recent posts have already been shared")
         return None
         
     except Exception as e:
