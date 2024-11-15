@@ -148,7 +148,7 @@ def post_to_facebook(post):
         
         result = fb_service.publish_post(request)
         if result:
-            print(f"Successfully posted to Facebook and Instagram: {post['title']}")
+            print(f"Successfully posted to Facebook and Instagram: {post['title']} {post['url']}")
             print(f"Facebook post ID: {result['facebook'].get('id')}")
             print(f"Instagram post ID: {result['instagram'].get('id')}")
         else:
