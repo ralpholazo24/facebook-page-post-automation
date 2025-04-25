@@ -6,8 +6,9 @@ on:
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
-  run-python-script:
+  run-python-script-1:
     runs-on: ubuntu-latest
+    name: Run Script with First FB Token
 
     steps:
       - name: Checkout code
@@ -30,5 +31,34 @@ jobs:
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           IG_ACCOUNT_ID: ${{ secrets.IG_ACCOUNT_ID }}
+          REDDIT_PAGE: ${{ secrets.REDDIT_PAGE }}
+        run: |
+          python main.py
+
+  run-python-script-2:
+    runs-on: ubuntu-latest
+    name: Run Script with Second FB Token
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run script
+        env:
+          FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN_2 }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID_2 }}
+          REDDIT_PAGE: ${{ secrets.REDDIT_PAGE_2 }}
         run: |
           python main.py

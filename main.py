@@ -24,10 +24,43 @@ class FacebookService:
             raise ValueError("FB_ACCESS_TOKEN environment variable is not set")
         if not self.PAGE_ID:
             raise ValueError("FB_PAGE_ID environment variable is not set")
-        if not self.IG_ACCOUNT_ID:
-            raise ValueError("IG_ACCOUNT_ID environment variable is not set")
 
     def publish_post(self, request: PostImageRequest):
+        """
+        Main method to publish a post to Facebook and optionally to Instagram if IG_ACCOUNT_ID is set
+        """
+        try:
+            # Publish to Facebook
+            fb_response = self.publish_to_facebook(request)
+            if not fb_response:
+                print("Failed to publish to Facebook")
+                return None
+                
+            # Only attempt Instagram publishing if IG_ACCOUNT_ID is set
+            if self.IG_ACCOUNT_ID:
+                ig_response = self.publish_to_instagram(request)
+                if not ig_response:
+                    print("Failed to publish to Instagram")
+                    # Facebook post was successful, but Instagram failed
+                    return {'facebook': fb_response, 'instagram': None}
+                
+                return {
+                    'facebook': fb_response,
+                    'instagram': ig_response
+                }
+            
+            # If IG_ACCOUNT_ID is not set, only return Facebook response
+            return {
+                'facebook': fb_response,
+                'instagram': None
+            }
+            
+        except Exception as e:
+            print(f"Error in publish_post: {e}")
+            return None
+            
+    def publish_to_facebook(self, request: PostImageRequest):
+        """Publish a post to Facebook"""
         try:
             # Facebook post - using the correct page ID endpoint
             fb_url = f"{self.BASE_URL}/{self.PAGE_ID}/photos"  # Changed from 'me/photos'
@@ -41,6 +74,22 @@ class FacebookService:
             fb_response = requests.post(fb_url, params=fb_params)
             fb_response.raise_for_status()
             
+            return fb_response.json()
+            
+        except requests.exceptions.RequestException as e:
+            error_message = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_message = f"Facebook API Error: {error_data}"
+                except ValueError:
+                    pass
+            print(f"Error publishing to Facebook: {error_message}")
+            return None
+            
+    def publish_to_instagram(self, request: PostImageRequest):
+        """Publish a post to Instagram"""
+        try:
             # Instagram post - Step 1: Create container
             ig_container_url = f"{self.BASE_URL}/{self.IG_ACCOUNT_ID}/media"
             ig_container_params = {
@@ -70,20 +119,17 @@ class FacebookService:
             ig_response = requests.post(ig_publish_url, params=ig_publish_params)
             ig_response.raise_for_status()
             
-            return {
-                'facebook': fb_response.json(),
-                'instagram': ig_response.json()
-            }
+            return ig_response.json()
             
         except requests.exceptions.RequestException as e:
             error_message = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 try:
                     error_data = e.response.json()
-                    error_message = f"API Error: {error_data}"
+                    error_message = f"Instagram API Error: {error_data}"
                 except ValueError:
                     pass
-            print(f"Error publishing post: {error_message}")
+            print(f"Error publishing to Instagram: {error_message}")
             return None
 
     def get_recent_posts(self, limit: int = 30) -> Set[str]:
@@ -112,7 +158,8 @@ def get_top_reddit_post() -> Optional[dict]:
             user_agent='ProgrammerHumorBot/1.0'
         )
         
-        subreddit = reddit.subreddit('ProgrammerHumor')
+        redditPage = os.getenv('REDDIT_PAGE')
+        subreddit = reddit.subreddit(redditPage)
         
         # Get existing post titles from Facebook
         fb_service = FacebookService()
@@ -136,7 +183,7 @@ def get_top_reddit_post() -> Optional[dict]:
         print(f"Error fetching Reddit post: {e}")
         return None
 
-def post_to_facebook(post):
+def process_post(post):
     try:
         fb_service = FacebookService()
         
@@ -160,7 +207,7 @@ def post_to_facebook(post):
 def main():
     top_post = get_top_reddit_post()
     if top_post:
-        post_to_facebook(top_post)
+        process_post(top_post)
 
 if __name__ == "__main__":
     main()
