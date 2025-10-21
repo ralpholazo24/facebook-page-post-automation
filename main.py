@@ -36,11 +36,25 @@ class FacebookService:
                 print("Failed to publish to Facebook")
                 return None
                 
+            # Check permissions for stories
+            print("Checking Facebook Stories permissions...")
+            has_permissions = self.check_stories_permissions()
+            
             # Publish to Facebook Story
-            story_response = self.publish_to_story(request)
-            if not story_response:
-                print("Failed to publish to Facebook Story")
-                # Continue even if story fails
+            story_response = None
+            if has_permissions:
+                story_response = self.publish_to_story(request)
+                if not story_response:
+                    print("Failed to publish to Facebook Story directly, trying alternative method...")
+                    # Try alternative method: share the existing post to story
+                    if fb_response and 'id' in fb_response:
+                        story_response = self.share_post_to_story(fb_response['id'])
+                        if not story_response:
+                            print("Failed to share post to Facebook Story")
+                    else:
+                        print("Cannot share to story - Facebook post ID not available")
+            else:
+                print("Skipping Facebook Story - insufficient permissions")
                 
             # Only attempt Instagram publishing if IG_ACCOUNT_ID is set
             ig_response = None
@@ -136,12 +150,12 @@ class FacebookService:
     def publish_to_story(self, request: PostImageRequest):
         """Publish a story to Facebook"""
         try:
-            # Facebook story - using the page ID endpoint for stories
-            story_url = f"{self.BASE_URL}/{self.PAGE_ID}/photos"
+            # Facebook story - using the correct stories endpoint
+            # Note: Facebook Stories API requires specific permissions and may not be available for all apps
+            story_url = f"{self.BASE_URL}/{self.PAGE_ID}/stories"
             story_params = {
                 'message': request['story'],
                 'url': request['url'],
-                'published': str(request['published']).lower(),
                 'access_token': self.FB_TOKEN
             }
             
@@ -156,10 +170,74 @@ class FacebookService:
                 try:
                     error_data = e.response.json()
                     error_message = f"Facebook Story API Error: {error_data}"
+                    # Check if it's a permissions issue
+                    if 'error' in error_data and 'code' in error_data['error']:
+                        if error_data['error']['code'] == 200:
+                            print("Facebook Stories API not available - this may require special permissions or the API may not be available for your app")
+                        elif error_data['error']['code'] == 190:
+                            print("Access token issue - please check your FB_ACCESS_TOKEN")
                 except ValueError:
                     pass
             print(f"Error publishing to Facebook Story: {error_message}")
             return None
+
+    def share_post_to_story(self, post_id: str):
+        """Alternative method: Share an existing post to story"""
+        try:
+            # This method shares an existing post to story
+            # Note: This may require different permissions
+            share_url = f"{self.BASE_URL}/{self.PAGE_ID}/stories"
+            share_params = {
+                'attached_media': f"{{'media_fbid': '{post_id}'}}",
+                'access_token': self.FB_TOKEN
+            }
+            
+            share_response = requests.post(share_url, params=share_params)
+            share_response.raise_for_status()
+            
+            return share_response.json()
+            
+        except requests.exceptions.RequestException as e:
+            error_message = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_message = f"Facebook Story Share API Error: {error_data}"
+                except ValueError:
+                    pass
+            print(f"Error sharing post to Facebook Story: {error_message}")
+            return None
+
+    def check_stories_permissions(self):
+        """Check if the app has permissions to post stories"""
+        try:
+            # Check app permissions
+            permissions_url = f"{self.BASE_URL}/me/permissions"
+            params = {'access_token': self.FB_TOKEN}
+            
+            response = requests.get(permissions_url, params=params)
+            response.raise_for_status()
+            
+            permissions = response.json().get('data', [])
+            required_permissions = ['pages_manage_posts', 'pages_read_engagement']
+            
+            available_permissions = [perm['permission'] for perm in permissions if perm.get('status') == 'granted']
+            
+            print(f"Available permissions: {available_permissions}")
+            
+            # Check if we have the required permissions
+            has_required = all(perm in available_permissions for perm in required_permissions)
+            
+            if not has_required:
+                print("Warning: Missing required permissions for Facebook Stories")
+                print(f"Required: {required_permissions}")
+                print(f"Available: {available_permissions}")
+            
+            return has_required
+            
+        except Exception as e:
+            print(f"Error checking permissions: {e}")
+            return False
 
     def get_recent_posts(self, limit: int = 30) -> Set[str]:
         """Fetch recent post captions to check for duplicates"""
