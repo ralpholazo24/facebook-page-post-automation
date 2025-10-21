@@ -27,7 +27,7 @@ class FacebookService:
 
     def publish_post(self, request: PostImageRequest):
         """
-        Main method to publish a post to Facebook and optionally to Instagram if IG_ACCOUNT_ID is set
+        Main method to publish a post to Facebook, Facebook Story, and optionally to Instagram if IG_ACCOUNT_ID is set
         """
         try:
             # Publish to Facebook
@@ -36,23 +36,24 @@ class FacebookService:
                 print("Failed to publish to Facebook")
                 return None
                 
+            # Publish to Facebook Story
+            story_response = self.publish_to_story(request)
+            if not story_response:
+                print("Failed to publish to Facebook Story")
+                # Continue even if story fails
+                
             # Only attempt Instagram publishing if IG_ACCOUNT_ID is set
+            ig_response = None
             if self.IG_ACCOUNT_ID:
                 ig_response = self.publish_to_instagram(request)
                 if not ig_response:
                     print("Failed to publish to Instagram")
                     # Facebook post was successful, but Instagram failed
-                    return {'facebook': fb_response, 'instagram': None}
                 
-                return {
-                    'facebook': fb_response,
-                    'instagram': ig_response
-                }
-            
-            # If IG_ACCOUNT_ID is not set, only return Facebook response
             return {
                 'facebook': fb_response,
-                'instagram': None
+                'story': story_response,
+                'instagram': ig_response
             }
             
         except Exception as e:
@@ -132,6 +133,34 @@ class FacebookService:
             print(f"Error publishing to Instagram: {error_message}")
             return None
 
+    def publish_to_story(self, request: PostImageRequest):
+        """Publish a story to Facebook"""
+        try:
+            # Facebook story - using the page ID endpoint for stories
+            story_url = f"{self.BASE_URL}/{self.PAGE_ID}/photos"
+            story_params = {
+                'message': request['story'],
+                'url': request['url'],
+                'published': str(request['published']).lower(),
+                'access_token': self.FB_TOKEN
+            }
+            
+            story_response = requests.post(story_url, params=story_params)
+            story_response.raise_for_status()
+            
+            return story_response.json()
+            
+        except requests.exceptions.RequestException as e:
+            error_message = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_message = f"Facebook Story API Error: {error_data}"
+                except ValueError:
+                    pass
+            print(f"Error publishing to Facebook Story: {error_message}")
+            return None
+
     def get_recent_posts(self, limit: int = 30) -> Set[str]:
         """Fetch recent post captions to check for duplicates"""
         url = f"{self.BASE_URL}/me/feed"
@@ -195,9 +224,12 @@ def process_post(post):
         
         result = fb_service.publish_post(request)
         if result:
-            print(f"Successfully posted to Facebook and Instagram: {post['title']} {post['url']}")
+            print(f"Successfully posted to Facebook, Story, and Instagram: {post['title']} {post['url']}")
             print(f"Facebook post ID: {result['facebook'].get('id')}")
-            print(f"Instagram post ID: {result['instagram'].get('id')}")
+            if result['story']:
+                print(f"Facebook Story ID: {result['story'].get('id')}")
+            if result['instagram']:
+                print(f"Instagram post ID: {result['instagram'].get('id')}")
         else:
             print("Failed to post")
             
